@@ -27,7 +27,10 @@ class ItemWBInterface(ItemInterface):
         for i in range(len(item_url)):
             if item_url[i] == "/":
                 inds.append(i)
-        art = item_url[inds[-2]+1:inds[-1]]
+        if(inds):
+            art = item_url[inds[-2]+1:inds[-1]]
+        else:
+            art = ''
         return art
         
     def _check_existance(self, item_url)-> bool:
@@ -43,9 +46,9 @@ class ItemWBInterface(ItemInterface):
             return True 
         return False
     
-    def _get_previous_price(self, item_id)->float:
+    def _get_previous_price(self, article)->float:
         with session_factory() as session:
-            q = select(Item_WB.last_price).filter_by(id=item_id)
+            q = select(Item_WB.last_price).filter_by(article=article)
             res = session.execute(q)
             return res.scalars().one()
     
@@ -112,4 +115,32 @@ class ItemWBInterface(ItemInterface):
             curr_price:float
             img_url:str
             }"""
+        if(not(self._check_existance(item_url))):
+            return None
+        prev_price = self._get_previous_price(item_url)
+        cur_price = self._get_current_price(item_url)
+        if(cur_price == -1):
+            return None
+        img_url = self._get_main_image_url(item_url)
+        title = self._get_title(item_url)
+        return {
+            'title':title,
+            'prev_price':prev_price,
+            'curr_price':cur_price,
+            'img_url':img_url,
+        }
+    def get_all_user_items(self,user_id):
+        query = select(Item_WB).filter_by(user_id=user_id)
+        with session_factory() as session:
+            res = session.execute(query)
+            ans = res.scalars().all()
+        items = []
+        for item in ans:
+            items.append({
+                'title':self._get_title(item.url),
+                'price':self._get_current_price(item.url),
+                'img_url':self._get_main_image_url(item.url),
+                'item_url':item.url,
+            })
+        return items
         

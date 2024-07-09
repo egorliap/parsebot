@@ -6,9 +6,10 @@ from sqlalchemy import select
 class UserInterface:
     def _check_user_in_db(self,id):
         with session_factory() as session:
-            stmt = select(User).where(User.id == id)
+            stmt = select(User).where(User.tg_id == id)
             res = session.execute(statement=stmt)
             if(res.all()):
+                print(res.all())
                 return True
             else:
                 return False

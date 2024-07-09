@@ -21,7 +21,7 @@ class Item_WB(Base):
     article=mapped_column(BigInteger,unique=True,nullable=False)
     last_check:Mapped[datetime.datetime] = mapped_column(server_default=text("TIMEZONE('utc', now())"))
     last_price:Mapped[float]
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    user_id = mapped_column(BigInteger,ForeignKey("user.tg_id"))
     user: Mapped["User"] = relationship(back_populates="items")
 
     
