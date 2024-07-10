@@ -2,7 +2,7 @@ from scr.database.models import Item_WB
 from scr.database.base import session_factory 
 from scr.database.config import HEADERS_WB
 import json
-from sqlalchemy import select
+from sqlalchemy import select,delete
 import requests
 
 class ItemInterface:
@@ -22,12 +22,13 @@ class ItemInterface:
     
 class ItemWBInterface(ItemInterface):
     wb_server_id_ranges = [143,287,431,719,1007,1061,1115,1169,1313,1601,1655,1919,2045,2189,2405,2621]
+    
     def _get_article_from_url(self,item_url)->str:
         inds = []
         for i in range(len(item_url)):
             if item_url[i] == "/":
                 inds.append(i)
-        if(inds):
+        if(len(inds)>=2):
             art = item_url[inds[-2]+1:inds[-1]]
         else:
             art = ''
@@ -46,7 +47,7 @@ class ItemWBInterface(ItemInterface):
             return True 
         return False
     
-    def _get_previous_price(self, article)->float:
+    def _get_previous_price(self, article:int)->float:
         with session_factory() as session:
             q = select(Item_WB.last_price).filter_by(article=article)
             res = session.execute(q)
@@ -76,8 +77,7 @@ class ItemWBInterface(ItemInterface):
             print("Products are not awailaible")        
         return price
         
-    def _get_main_image_url(self,item_url)->str:
-        art = self._get_article_from_url(item_url)
+    def _get_main_image_url(self,art:str)->str:
         vol = int(art[:-5])
         basket = '17'
         for i in range(len(self.wb_server_id_ranges)):
@@ -101,7 +101,10 @@ class ItemWBInterface(ItemInterface):
         price = self._get_current_price(item_url)
         if(price == -1):
             return False
-        item = Item_WB(url=item_url,article=int(self._get_article_from_url(item_url)),last_price=price,user_id=user_id)
+        item = Item_WB(url=item_url,
+                       article=int(self._get_article_from_url(item_url)),
+                       last_price=price,
+                       user_id=user_id)
         with session_factory() as session:
             session.add(item)
             session.commit()
@@ -109,26 +112,23 @@ class ItemWBInterface(ItemInterface):
         
     
     def get_price_update_message(self,item_url)-> dict:
-        """{
-            title:str
-            prev_price:float
-            curr_price:float
-            img_url:str
-            }"""
         if(not(self._check_existance(item_url))):
             return None
         prev_price = self._get_previous_price(item_url)
-        cur_price = self._get_current_price(item_url)
-        if(cur_price == -1):
+        curr_price = self._get_current_price(item_url)
+        if(curr_price == -1):
             return None
-        img_url = self._get_main_image_url(item_url)
+        img_url = self._get_main_image_url(self._get_article_from_url(item_url))
         title = self._get_title(item_url)
-        return {
-            'title':title,
-            'prev_price':prev_price,
-            'curr_price':cur_price,
-            'img_url':img_url,
-        }
+        return ItemInfo(
+                title=title,
+                prev_price=prev_price,
+                curr_price=curr_price,
+                img_url=img_url,
+                url=item_url,
+                )
+        
+        
     def get_all_user_items(self,user_id):
         query = select(Item_WB).filter_by(user_id=user_id)
         with session_factory() as session:
@@ -136,11 +136,31 @@ class ItemWBInterface(ItemInterface):
             ans = res.scalars().all()
         items = []
         for item in ans:
-            items.append({
-                'title':self._get_title(item.url),
-                'price':self._get_current_price(item.url),
-                'img_url':self._get_main_image_url(item.url),
-                'item_url':item.url,
-            })
+            items.append(ItemInfo(
+                title=self._get_title(item.url),
+                prev_price=self._get_previous_price(item.article),
+                curr_price=self._get_current_price(item.url),
+                img_url=self._get_main_image_url(str(item.article)),
+                url=item.url,
+                article=item.article
+                ))
+            
         return items
+    def delete_item(self,art, user_id):
+        q = delete(Item_WB).filter_by(article = int(art),user_id = user_id)
+        with session_factory() as session:
+            session.execute(q)
+            session.commit()
         
+
+
+        
+class ItemInfo:
+    def __init__(self,title:str,prev_price:float,curr_price:float,img_url:str,url:str,article:str) -> None:
+        self.title = title
+        self.prev_price = prev_price
+        self.curr_price = curr_price
+        self.img_url = img_url
+        self.url = url
+        self.art = article
+    
