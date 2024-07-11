@@ -26,7 +26,7 @@ async def start(message:Message):
 @router.callback_query(F.data == 'start')
 async def reg(callback: CallbackQuery):
     user = UserInterface(callback.from_user.id)
-    user.add_user_to_db()
+    await user.add_user_to_db()
     await callback.answer()
     await callback.message.edit_text(text="OK! Choose option:")
     await callback.message.edit_reply_markup(reply_markup=main_menu)
@@ -61,15 +61,16 @@ async def finish_addition(message:Message,state:FSMContext):
     data = await state.get_data()
     await message.reply(text=f"MP: {data['marketplace']}, url: {data['url']}")
     ii = ItemWBInterface()
-    ii.add_item_to_db(user_id=message.from_user.id,item_url=data['url'])
+    await ii.add_item_to_db(user_id=message.from_user.id,item_url=data['url'])
     await state.clear()
 
 
 @router.callback_query(F.data.startswith('delete_'))
 async def delete_position(callback:CallbackQuery):
     await callback.answer()
+    await callback.message.delete()
     interface = UserInterface(callback.from_user.id)
-    interface.delete_item(callback.data.split("_")[1])
+    await interface.delete_item(callback.data.split("_")[1])
 
 
 
@@ -77,8 +78,8 @@ async def delete_position(callback:CallbackQuery):
 @router.callback_query(F.data == 'positions')
 async def show_positions(callback:CallbackQuery):
     user = UserInterface(callback.from_user.id)
-    items = user.get_user_items()
-    mgs = []
+    items = await user.get_user_items()
+
     for item in items:
         await callback.message.answer_photo(
             photo=item.img_url,

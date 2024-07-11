@@ -5,12 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-engine = create_engine(
-    url=settings.DATABASE_URL_psycopg,
+engine = create_async_engine(
+    url=settings.DATABASE_URL_asyncpg,
     echo=True
 )
 
-session_factory = sessionmaker(engine)
+session_factory = async_sessionmaker(engine)
 
 class Base(DeclarativeBase):
     pass
