@@ -1,8 +1,9 @@
+from datetime import datetime,timedelta
 from scr.database.models import Item_WB
 from scr.database.base import session_factory 
 from scr.database.config import HEADERS_WB
 import json
-from sqlalchemy import select,delete
+from sqlalchemy import TIMESTAMP, select,delete, func, update
 import requests
 import aiohttp
 from aiohttp import ClientSession
@@ -64,7 +65,7 @@ class ItemWBInterface:
             res = await session.execute(q)
             return res.scalars().one()
         
-    async def _get_current_price(self, item_url,session_http)->float:
+    async def get_current_price(self, item_url,session_http=None)->float:
         products = await self._get_products_list(item_url,session_http)
         if(products):
             sizes = products[0].get('sizes','sizes_not_found')
@@ -93,17 +94,24 @@ class ItemWBInterface:
             return products[0].get('name','name_not_found')
         return ''
     
-    
+    async def get_items_checked_in_period(self):
+        async with session_factory() as session:
+            today = datetime.now()
+            period_ago = datetime.now() - timedelta(days=4)
+
+            q = select(Item_WB).filter(
+                Item_WB.last_check <= period_ago
+            )
+            res = await session.execute(q)
+            return res.scalars().all()
     
     async def add_item_to_db(self, user_id, item_url)-> bool:
-     
-        
         async with ClientSession(headers=HEADERS_WB.update({'Referer': item_url})) as session_http:
             if(not(await self._check_existance(item_url,session_http=session_http))):
-                return False
-            price = await self._get_current_price(item_url,session_http=session_http)
+                raise ValueError
+            price = await self.get_current_price(item_url,session_http=session_http)
             if(price == -1):
-                return False
+                raise ValueError
             item = Item_WB(url=item_url,
                         article=int(self._get_article_from_url(item_url)),
                         last_price=price,
@@ -111,54 +119,35 @@ class ItemWBInterface:
             async with session_factory() as session:
                 session.add(item)
                 await session.commit()
-            return True
+    async def create_info_message(self,item: Item_WB, session_http:ClientSession):
         
-    
-    
-    async def get_price_update_message(self,item_url)-> dict:
-      
-        async with ClientSession(headers=HEADERS_WB.update({'Referer': item_url})) as session_http:
-            if(not(self._check_existance(item_url,session_http))):
-                return None
-            prev_price = await self._get_previous_price(item_url)
-            curr_price = await self._get_current_price(item_url,session_http)
-            if(curr_price == -1):
-                return None
-            img_url = self._get_main_image_url(self._get_article_from_url(item_url))
-            title = await self._get_title(item_url,session_http)
-            return ItemInfo(
-                    title=title,
-                    prev_price=prev_price,
-                    curr_price=curr_price,
-                    img_url=img_url,
-                    url=item_url,
-                    )
+        
+        session_http.headers.update({
+                'Referer': item.url
+                })
+        
+        return ItemInfo(
+                        title=await self._get_title(item.url,session_http),
+                        prev_price= item.last_price,
+                        curr_price=await self.get_current_price(item.url,session_http),
+                        img_url=self._get_main_image_url(str(item.article)),
+                        url=item.url,
+                        article=item.article,
+                        user_id=item.user_id
+                        )
         
         
     async def get_all_user_items(self,user_id):
-        
         query = select(Item_WB).filter_by(user_id=user_id)
         async with session_factory() as session:
             res = await session.execute(query)
             ans = res.scalars().all()
-        items = []
         session_http = ClientSession()
         session_http.headers.update(HEADERS_WB) 
         for item in ans:
-            session_http.headers.update({
-                'Referer': item.url
-                })
-            
-            items.append(ItemInfo(
-                    title=await self._get_title(item.url,session_http),
-                    prev_price=await self._get_previous_price(item.article),
-                    curr_price=await self._get_current_price(item.url,session_http),
-                    img_url=self._get_main_image_url(str(item.article)),
-                    url=item.url,
-                    article=item.article
-                    ))
+            yield await self.create_info_message(item,session_http)
         await session_http.close()
-        return items
+        
     
     
     async def delete_item(self,art, user_id):
@@ -166,16 +155,27 @@ class ItemWBInterface:
         async with session_factory() as session:
             await session.execute(q)
             await session.commit()
-        
+    async def update_price_info(self,item: Item_WB):
+        session_http = ClientSession()
+        session_http.headers.update(HEADERS_WB) 
+        q = (update(Item_WB)
+             .filter_by(id=item.id)
+             .values(last_price=await self.get_current_price(item.url,session_http),
+                     last_check=func.now()))
+        await session_http.close()
+        async with session_factory() as session:
+            await session.execute(q)
+            await session.commit()
 
 
         
 class ItemInfo:
-    def __init__(self,title:str,prev_price:float,curr_price:float,img_url:str,url:str,article:str) -> None:
+    def __init__(self,title:str,prev_price:float,curr_price:float,img_url:str,url:str,article:str,user_id:int) -> None:
         self.title = title
         self.prev_price = prev_price
         self.curr_price = curr_price
         self.img_url = img_url
         self.url = url
         self.art = article
+        self.user_id = user_id
     

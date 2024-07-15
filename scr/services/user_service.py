@@ -21,15 +21,13 @@ class UserInterface:
         if(not(await self._check_user_in_db())):
             async with session_factory() as session:
                 user = User(tg_id = self.id)
-                await session.add(user)
+                session.add(user)
                 await session.commit()
-            return True
-        else:
-            return False
+            
         
         
-    async def get_user_items(self)->List[ItemInfo]:
-        return await ItemWBInterface().get_all_user_items(self.id)
+    def get_user_items(self):
+        return ItemWBInterface().get_all_user_items(self.id)
     
     
     async def delete_item(self,article):
